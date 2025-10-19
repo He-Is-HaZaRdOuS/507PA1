@@ -29,6 +29,7 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 #define CHANNEL_NUM 3
+#define LANCZOS_A 3.0
 
 //Do not use global variables
 
@@ -45,7 +46,7 @@ double sinc(double x);
 double lanczos(double x, double a);
 double lanczos2d(double x, double y, double a);
 RGB resample(const RGB* image, int width, int height, double ox, double oy, double a);
-RGB* seq_downscaling(const RGB* input_image,int width, int height, int new_width, int new_height, double a);
+RGB* seq_rescaling(const RGB* input_image, int width, int height, int new_width, int new_height, double a);
 
 int main(int argc,char* argv[]) {
     /* Abort if # of CLA is invalid */
@@ -85,14 +86,14 @@ int main(int argc,char* argv[]) {
     /* Start the timer */
     const double time1= MPI_Wtime();
 
-    RGB* downscaled_image = seq_downscaling(input_image, width, height, new_width, new_height, 3.0);
+    RGB* downscaled_image = seq_rescaling(input_image, width, height, new_width, new_height, LANCZOS_A);
 
     /* Stop the timer */
     const double time2= MPI_Wtime();
     printf("Elapsed time: %lf \n",time2-time1);
 
     stbi_write_jpg(outputPath.c_str(), new_width, new_height, CHANNEL_NUM, downscaled_image, 100);
-    stbi_image_free(input_image);
+    stbi_image_free(input_data);
     free(downscaled_image);
 
     MPI_Finalize();
@@ -149,7 +150,7 @@ RGB resample(const RGB* image, const int width, const int height, const double o
     return result;
 }
 
-RGB* seq_downscaling(const RGB* input_image, int width, int height, int new_width, int new_height, const double a) {
+RGB* seq_rescaling(const RGB* input_image, int width, int height, int new_width, int new_height, const double a) {
     /* Allocate temporary memory to construct final image */
     RGB* output_image = static_cast<RGB*>(malloc(new_width * new_height * sizeof(RGB)));
 
