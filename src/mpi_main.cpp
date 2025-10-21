@@ -63,6 +63,7 @@ int main(int argc,char* argv[]) {
     int m_rank, comm_sz, width, height, new_width, new_height, bpp;
     MPI_Comm_size(MPI_COMM_WORLD, &comm_sz);
     MPI_Comm_rank(MPI_COMM_WORLD, &m_rank);
+
     std::string inputPath, outputPath;
     RGB* input_image = nullptr;
     RGB* output_image = nullptr;
@@ -103,16 +104,49 @@ int main(int argc,char* argv[]) {
         printf("New Width: %d  New Height: %d  BPP: %d \n",new_width, new_height, bpp);
     }
 
-    /* Broadcast updated variables to other processes */
     MPI_Bcast(&width, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&height, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&new_width, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&new_height, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Calculate input zones with overlap
-    constexpr int overlap = static_cast<int>(LANCZOS_A);
-    const int zoneHeight = (height + comm_sz - 1) / comm_sz;
+    int zoneHeight = (height + comm_sz - 1) / comm_sz;
 
+    constexpr int MIN_REGION_HEIGHT = 2 * LANCZOS_A + 1;
+    constexpr int MIN_ZONE_HEIGHT = MIN_REGION_HEIGHT + 2 * LANCZOS_A;
+
+    MPI_Comm effective_comm = MPI_COMM_WORLD;
+    int effective_comm_sz = comm_sz;
+
+    /* Cull processes */
+    if ((new_height / comm_sz) < MIN_REGION_HEIGHT || zoneHeight < MIN_ZONE_HEIGHT) {
+        effective_comm_sz = std::min(new_height / MIN_REGION_HEIGHT, height / MIN_ZONE_HEIGHT);
+        if (effective_comm_sz < 1) effective_comm_sz = 1;
+
+        if (m_rank == 0) {
+            printf("Using %d of %d processes (min output zone: %d pixels)\n",
+                   effective_comm_sz, comm_sz, MIN_REGION_HEIGHT);
+        }
+
+        /* Split communicator */
+        int cond = (m_rank < effective_comm_sz) ? 0 : MPI_UNDEFINED;
+        MPI_Comm_split(MPI_COMM_WORLD, cond, m_rank, &effective_comm);
+
+        /* Extra processes exit early */
+        if (cond == MPI_UNDEFINED) {
+            MPI_Finalize();
+            return 0;
+        }
+
+        comm_sz = effective_comm_sz;
+
+        /* Update rank and size in the new communicator */
+        MPI_Comm_size(effective_comm, &comm_sz);
+        MPI_Comm_rank(effective_comm, &m_rank);
+    }
+
+    /* Update zoneHeight */
+    zoneHeight = (height + comm_sz - 1) / comm_sz;
+    constexpr int overlap = static_cast<int>(2 * LANCZOS_A);
     int start_row = m_rank * zoneHeight;
     int end_row = (m_rank == comm_sz - 1) ? height : (m_rank + 1) * zoneHeight;
 
@@ -142,10 +176,10 @@ int main(int argc,char* argv[]) {
             int dest_height = dest_end - dest_start;
 
             MPI_Send(&input_image[dest_start * width], dest_height * width, MPI_RGB,
-                    dest, 0, MPI_COMM_WORLD);
+                    dest, 0, effective_comm);
         }
     } else {
-        MPI_Recv(temp_out, local_height * width, MPI_RGB, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(temp_out, local_height * width, MPI_RGB, 0, 0, effective_comm, MPI_STATUS_IGNORE);
     }
 
     // Call rescaling function with CORRECT start_input_row
@@ -174,13 +208,15 @@ int main(int argc,char* argv[]) {
     printf("Rank %d: local_output_height = %d, start_output_row = %d\n",
            m_rank, new_height / comm_sz, start_row);
 
-    // MPI_Barrier(MPI_COMM_WORLD);
+    // MPI_Barrier(effective_comm);
 
-    MPI_Gatherv(partial_result, (new_height / comm_sz) * new_width, MPI_RGB,
-                output_image, recvcounts, displs, MPI_RGB, 0, MPI_COMM_WORLD);
+    // MPI_Gatherv(partial_result, (new_height / comm_sz) * new_width, MPI_RGB,
+    //             output_image, recvcounts, displs, MPI_RGB, 0, effective_comm);
+    int local_output_height = new_height / comm_sz + (m_rank < new_height % comm_sz ? 1 : 0);
+    MPI_Gatherv(partial_result, local_output_height * new_width, MPI_RGB, output_image, recvcounts, displs, MPI_RGB, 0, effective_comm);
 
     /* Synchronize and stop timer */
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(effective_comm);
     const double time2= MPI_Wtime();
 
     if(m_rank == 0) {
@@ -217,7 +253,7 @@ int main(int argc,char* argv[]) {
         if(stbi_failure_reason()) {
             std::cerr << stbi_failure_reason() << " \"" + seq_input + "\"\n";
             std::cerr << "Aborting...\n";
-            MPI_Abort(MPI_COMM_WORLD, 1);
+            MPI_Abort(effective_comm, 1);
             exit(1);
         }
 
@@ -228,7 +264,7 @@ int main(int argc,char* argv[]) {
             std::cerr << stbi_failure_reason() << " \"" + par_input + "\"\n";
             std::cerr << "Aborting...\n";
             stbi_image_free(seq_img);
-            MPI_Abort(MPI_COMM_WORLD, 1);
+            MPI_Abort(effective_comm, 1);
             exit(1);
         }
 
