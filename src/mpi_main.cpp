@@ -4,11 +4,11 @@
  *
  * Lanczos Rescaling
  *
- * Usage:  mpirun -n <N> executable <input.jpg> <output.jpg> <sequential_output.jpg> <float>
+ * Usage:  mpirun -n <threadCount> executable <input.jpg> <output.jpg> <sequential_output.jpg> <float>
  *
  * @author  Yousif
  *
- * @version 1.0, 19 October 2025
+ * @version 1.0, 23 October 2025
  */
 
 // ReSharper disable CppDFANullDereference
