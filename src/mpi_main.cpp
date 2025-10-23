@@ -71,7 +71,7 @@ int main(int argc,char* argv[]) {
     /* Abort if # of CLA is invalid */
     if(argc != 5 && m_rank == 0){
         std::cerr << "Invalid number of arguments, aborting..." << std::endl;
-        std::cerr << "Usage: <Program(./parallel)> <Input(papagan.jpg)> <Output(mpi_rescaled_papagan.jpg)> <Sequential Input(seq_rescaled_papagan.jpg)> <Scale Factor(2x for upscale, 0.5 for downscale, etc.)>" << std::endl;
+        std::cerr << "Usage: <Program(./omp)> <Input(papagan.jpg)> <Output(mpi_rescaled_papagan.jpg)> <Sequential Input(seq_rescaled_papagan.jpg)> <Scale Factor(2x for upscale, 0.5 for downscale, etc.)>" << std::endl;
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
