@@ -214,8 +214,8 @@ RGB* omp_rescaling(const RGB* input_image, int width, int height, int new_width,
 
 #pragma omp parallel for collapse(2) num_threads(threadCount)
     for (int new_y = 0; new_y < new_height; ++new_y) {
-        const double original_y = static_cast<double>(new_y) * height / new_height;
         for (int new_x = 0; new_x < new_width; ++new_x) {
+            const double original_y = static_cast<double>(new_y) * height / new_height;
             const double original_x = static_cast<double>(new_x) * width / new_width;
             RGB rgb = resample(input_image, width, height, original_x, original_y, a);
             output_image[new_y * new_width + new_x] = rgb;
